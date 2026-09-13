@@ -10,6 +10,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <title>EvidenceBoard</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="enhancements.css">
 </head>
 <body>
   <div id="app">
@@ -18,8 +19,12 @@
       <div class="top-actions">
         <label class="button primary" for="file-input">Add PDF</label>
         <input id="file-input" type="file" accept="application/pdf" multiple hidden>
+        <label class="button" for="reference-input">Import references</label>
+        <input id="reference-input" type="file" accept=".ris,.bib,.txt" multiple hidden>
         <button class="button" id="new-note">New note</button>
-        <button class="button" id="connect">Connect</button>
+        <button class="button" id="connect">Draw link</button>
+        <button class="button" id="page-editor">PDF pages</button>
+        <button class="button" id="ocr-page">OCR page</button>
         <button class="button" id="export">Export outline</button>
       </div>
     </header>
@@ -45,18 +50,19 @@
       </div>
     </main>
     <section class="board-pane" id="board-pane">
-      <div class="board-toolbar"><strong id="board-title">Board</strong><div><button class="tool selected" data-tool="select">Select</button><button class="tool" data-tool="ink">Ink</button><button class="tool" data-tool="pan">Pan</button><button id="fit-board" class="icon-button" title="Fit board">⊙</button></div></div>
+      <div class="board-toolbar"><strong id="board-title">Board</strong><div><button class="tool selected" data-tool="select">Select</button><button class="tool" data-tool="ink">Ink</button><button class="tool" data-tool="link">Link</button><button class="tool" data-tool="pan">Pan</button><button id="fit-board" class="icon-button" title="Fit board">⊙</button></div></div>
       <div id="board-viewport" class="board-viewport">
         <div id="board" class="board">
           <svg id="links" class="links" aria-hidden="true"></svg>
           <canvas id="ink" class="ink" aria-label="Ink canvas"></canvas>
           <div id="items" class="items"></div>
         </div>
-        <div id="board-hint" class="board-hint">Drag cards to arrange ideas. Select two cards, then tap Connect.</div>
+        <div id="board-hint" class="board-hint">Drag cards to arrange ideas. Use Link, then draw from one card to another.</div>
       </div>
     </section>
   </div>
   <template id="item-template"><article class="item" tabindex="0"><div class="item-head"><span class="drag-handle">⠿</span><button class="item-delete" aria-label="Delete">×</button></div><div class="item-body"></div><div class="item-meta"></div></article></template>
+  <dialog id="page-dialog"><form method="dialog"><div class="dialog-head"><strong>PDF page editor</strong><button value="cancel" class="icon-button">×</button></div><p id="page-dialog-help">Reorder pages, hide pages, or export the resulting PDF.</p><div id="page-grid" class="page-grid"></div><div class="dialog-actions"><button id="export-edited-pdf" type="button" class="button primary">Export PDF</button><button value="cancel" class="button">Done</button></div></form></dialog>
   <script type="module" src="app.js"></script>
 </body>
 </html>

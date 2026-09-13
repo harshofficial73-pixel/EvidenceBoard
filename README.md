@@ -8,14 +8,18 @@ An original, local-first visual research board for iPad. It is a Progressive Web
 - Renders a source document with page navigation and zoom.
 - Searches imported sources and board notes.
 - Turns selected PDF text into movable, source-linked excerpt cards.
-- Creates editable notes, multiple boards, card-to-card labeled connections, and simple freehand ink.
+- Creates editable notes, multiple boards, card-to-card labeled connections drawn directly between cards, and simple freehand ink.
+- Highlights selected text and creates source-linked comments.
+- Imports RIS/BibTeX reference exports from Zotero or Mendeley into the current board.
+- Runs optional on-device OCR on the visible PDF page and adds the recognized text to a board note.
+- Provides a PDF page editor for hiding, restoring, reordering, and exporting the resulting page sequence.
 - Opens an excerpt’s source page on double-tap.
 - Persists projects in the browser’s local storage (IndexedDB) and exports a Markdown outline.
 
 ## What is deliberately not claimed yet
 
-- OCR for scanned PDFs, Word/PowerPoint conversion, document replacement, visual document compression, cloud drive import, cross-device sync, collaborative editing, private-sharing controls, push notifications, DOCX/PDF project export, and iPad-as-desktop-display are later releases.
-- The app uses the public PDF.js delivery URL while loading PDFs. First use requires internet access. Do not count on offline use until the PDF rendering library is bundled locally in a deployment build.
+- Word/PowerPoint conversion, document replacement, visual document compression, cloud drive import, cross-device sync, collaborative editing, private-sharing controls, push notifications, DOCX project export, direct Zotero/Mendeley OAuth synchronization, and iPad-as-desktop-display are later releases.
+- The app uses public browser libraries for PDF rendering, OCR, and PDF export. First use of those functions requires internet access. Do not count on offline use until their libraries are bundled locally in a deployment build.
 - Browser-local storage can be removed when Safari website data is cleared. Export important work routinely; a portable project backup/import feature is the next essential addition.
 
 ## Put it on an iPad without a Mac
@@ -25,6 +29,8 @@ An original, local-first visual research board for iPad. It is a Progressive Web
 3. Open the resulting HTTPS address in Safari on the iPad.
 4. Tap Share, then **Add to Home Screen**. Launch EvidenceBoard from its new icon.
 5. Add a PDF using **Add PDF** and use it in landscape for the two-pane reader/board layout.
+
+After updating a hosted copy, refresh the browser page once before opening the Home Screen version. If it still shows the old interface, remove the old Home Screen icon and add it again; installed web apps may retain the prior service-worker cache.
 
 Do not open `index.html` directly from the iPad Files app: Safari’s local-file mode blocks important browser storage and install features. Hosting over HTTPS is required for the installable/offline parts.
 
