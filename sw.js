@@ -1,4 +1,4 @@
-const CACHE = 'evidenceboard-v2';
+const CACHE = 'evidenceboard-v3';
 const LOCAL = ['./','./index.html','./styles.css','./enhancements.css','./app.js','./manifest.webmanifest'];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(c => c.addAll(LOCAL))));
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));

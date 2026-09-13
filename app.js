@@ -1,4 +1,5 @@
-import * as pdfjsLib from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
+import * as pdfjsCore from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
+const pdfjsLib = {...pdfjsCore, renderTextLayer: args => typeof pdfjsCore.renderTextLayer === 'function' ? pdfjsCore.renderTextLayer(args) : {promise: new pdfjsCore.TextLayer(args).render()}};
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
 
 const $ = selector => document.querySelector(selector);
