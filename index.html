@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f7f4ed">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="EvidenceBoard">
+  <link rel="manifest" href="manifest.webmanifest">
+  <title>EvidenceBoard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <button class="brand" id="project-name" title="Rename project">EvidenceBoard <span>Local-first research</span></button>
+      <div class="top-actions">
+        <label class="button primary" for="file-input">Add PDF</label>
+        <input id="file-input" type="file" accept="application/pdf" multiple hidden>
+        <button class="button" id="new-note">New note</button>
+        <button class="button" id="connect">Connect</button>
+        <button class="button" id="export">Export outline</button>
+      </div>
+    </header>
+    <aside class="library" aria-label="Documents">
+      <div class="aside-head"><strong>Sources</strong><button id="new-board" class="icon-button" title="New board">＋</button></div>
+      <div id="document-list" class="document-list"><p class="empty">Add a PDF to begin.</p></div>
+      <div class="board-list"><span>BOARDS</span><div id="board-list"></div></div>
+      <div class="local-note">Stored on this iPad/browser. Export a project backup regularly.</div>
+    </aside>
+    <main class="reader" id="reader">
+      <div class="reader-toolbar">
+        <select id="doc-picker" aria-label="Current document"><option value="">Choose a document</option></select>
+        <button id="prev-page" class="icon-button" aria-label="Previous page">‹</button>
+        <span id="page-label">—</span>
+        <button id="next-page" class="icon-button" aria-label="Next page">›</button>
+        <button id="zoom-out" class="icon-button" aria-label="Zoom out">−</button>
+        <span id="zoom-label">100%</span>
+        <button id="zoom-in" class="icon-button" aria-label="Zoom in">＋</button>
+        <label class="search"><span>⌕</span><input id="search-input" placeholder="Search sources and notes"></label>
+      </div>
+      <div id="reader-stage" class="reader-stage">
+        <div class="welcome"><h1>Read with room to think.</h1><p>Import PDFs, select a passage, then choose <b>Make excerpt</b>. Evidence stays linked to its source.</p></div>
+      </div>
+    </main>
+    <section class="board-pane" id="board-pane">
+      <div class="board-toolbar"><strong id="board-title">Board</strong><div><button class="tool selected" data-tool="select">Select</button><button class="tool" data-tool="ink">Ink</button><button class="tool" data-tool="pan">Pan</button><button id="fit-board" class="icon-button" title="Fit board">⊙</button></div></div>
+      <div id="board-viewport" class="board-viewport">
+        <div id="board" class="board">
+          <svg id="links" class="links" aria-hidden="true"></svg>
+          <canvas id="ink" class="ink" aria-label="Ink canvas"></canvas>
+          <div id="items" class="items"></div>
+        </div>
+        <div id="board-hint" class="board-hint">Drag cards to arrange ideas. Select two cards, then tap Connect.</div>
+      </div>
+    </section>
+  </div>
+  <template id="item-template"><article class="item" tabindex="0"><div class="item-head"><span class="drag-handle">⠿</span><button class="item-delete" aria-label="Delete">×</button></div><div class="item-body"></div><div class="item-meta"></div></article></template>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
