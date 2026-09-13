@@ -1,47 +1,95 @@
-# EvidenceBoard
+# LiquidText Web Workspace (PWA)
 
-An original, local-first visual research board for iPad. It is a Progressive Web App (PWA), not a LiquidText clone and not an App Store app.
+A free, open-source web implementation of the **LiquidText active reading interface**, specifically designed to run seamlessly on iPad without needing a Mac, Xcode, or App Store developer fees.
 
-## What this build already does
+---
 
-- Imports one or more text-based PDFs from the iPad Files picker.
-- Renders a source document with page navigation and zoom.
-- Searches imported sources and board notes.
-- Turns selected PDF text into movable, source-linked excerpt cards.
-- Creates editable notes, multiple boards, card-to-card labeled connections drawn directly between cards, and simple freehand ink.
-- Highlights selected text and creates source-linked comments.
-- Imports RIS/BibTeX reference exports from Zotero or Mendeley into the current board.
-- Runs optional on-device OCR on the visible PDF page and adds the recognized text to a board note.
-- Provides a PDF page editor for hiding, restoring, reordering, and exporting the resulting page sequence.
-- Opens an excerpt’s source page on double-tap.
-- Persists projects in the browser’s local storage (IndexedDB) and exports a Markdown outline.
+## 📁 Project Structure
 
-## What is deliberately not claimed yet
+Place all of these files inside a single folder named `liquidtext-web`:
 
-- Word/PowerPoint conversion, document replacement, visual document compression, cloud drive import, cross-device sync, collaborative editing, private-sharing controls, push notifications, DOCX project export, direct Zotero/Mendeley OAuth synchronization, and iPad-as-desktop-display are later releases.
-- The app uses public browser libraries for PDF rendering, OCR, and PDF export. First use of those functions requires internet access. Do not count on offline use until their libraries are bundled locally in a deployment build.
-- Browser-local storage can be removed when Safari website data is cleared. Export important work routinely; a portable project backup/import feature is the next essential addition.
+```text
+liquidtext-web/
+├── index.html          # Main HTML structure & dual-pane layout
+├── styles.css          # Dark-mode styling, paper rendering & UI animations
+├── app.js              # Core logic: gestures, Bezier threads, deep links, PDF engine
+├── manifest.json       # PWA manifest for iPad full-screen standalone mode
+├── service-worker.js   # Offline caching worker
+└── README.md           # Documentation & deployment guide
+```
 
-## Put it on an iPad without a Mac
+---
 
-1. From Windows, create a free account with a static-site host such as Cloudflare Pages, GitHub Pages, or Netlify.
-2. Upload the **contents** of this `evidenceboard` folder as one static website. No server or database is needed for the local-first build.
-3. Open the resulting HTTPS address in Safari on the iPad.
-4. Tap Share, then **Add to Home Screen**. Launch EvidenceBoard from its new icon.
-5. Add a PDF using **Add PDF** and use it in landscape for the two-pane reader/board layout.
+## ⚡ Core Features
 
-After updating a hosted copy, refresh the browser page once before opening the Home Screen version. If it still shows the old interface, remove the old Home Screen icon and add it again; installed web apps may retain the prior service-worker cache.
+- **Dual-Pane Adaptive Layout:** Document reader on the left, infinite visual canvas on the right with a draggable splitter.
+- **Bidirectional Deep-Linking:** Tap any excerpt card's page badge to auto-scroll the document straight back to the source line with an attention pulse.
+- **Accordion Fold Simulation:** Collapse intervening pages to compare distant sections (e.g., introduction and conclusion) side-by-side.
+- **Dynamic Bezier Connector Threads:** Link excerpt cards with flexible cubic Bezier curves by dragging card ports.
+- **Apple Pencil & Stylus Support:** Pressure-responsive freehand inking layer for sketching diagrams, margin notes, and circling concepts.
+- **Local PDF Support via PDF.js:** Load local PDF documents entirely client-side with no remote server uploads required.
+- **100% Free & Zero Mac Needed:** No Xcode, macOS, or Apple Developer accounts required.
 
-Do not open `index.html` directly from the iPad Files app: Safari’s local-file mode blocks important browser storage and install features. Hosting over HTTPS is required for the installable/offline parts.
+---
 
-## How to use
+## 🚀 Free Deployment Guide (No Mac Required)
 
-1. Add a PDF, select a text passage, and tap **Make excerpt**.
-2. Drag excerpt cards around the board; create typed notes with **New note**.
-3. Tap a card, then Shift-tap a second card (or use a hardware keyboard) and choose **Connect**. On touch-only iPad interaction, card selection remains intentionally simple in this prototype; a multi-select mode is planned.
-4. Double-tap an excerpt to return to its source page.
-5. Tap the project name to rename it; export a Markdown outline from **Export outline**.
+You can host this folder in under 2 minutes using any standard web browser on Windows, Linux, Android, or directly on your iPad.
 
-## Privacy
+### Option 1: Netlify Drop (Easiest — No CLI / No Git)
+1. Visit **[Netlify Drop](https://app.netlify.com/drop)** in your browser.
+2. Sign up or log in (completely free).
+3. Drag and drop the `liquidtext-web` folder onto the browser window.
+4. Netlify will instantly provide a live HTTPS URL (e.g., `https://liquid-notes-123.netlify.app`).
 
-All project data and imported files remain in this browser on this device unless the user exports a file. This version has no login, telemetry, or cloud synchronization.
+---
+
+### Option 2: GitHub Pages (Free Permanent Hosting)
+1. Go to **[GitHub](https://github.com)** and create a new public repository (e.g., `liquidtext-web`).
+2. Click **Add file > Upload files** and drag the contents of `liquidtext-web/` into the repo.
+3. Commit the changes.
+4. In your repository, go to **Settings > Pages**.
+5. Under **Branch**, select `main` (or `master`) and folder `/ (root)`, then click **Save**.
+6. Your app will be live at `https://<your-username>.github.io/liquidtext-web/`.
+
+---
+
+### Option 3: Vercel
+1. Go to **[Vercel](https://vercel.com)** and sign in.
+2. Select **Add New > Project**.
+3. Import your GitHub repository or use the Vercel web drag-and-drop dashboard.
+4. Click **Deploy** to receive your production URL.
+
+---
+
+## 📱 iPad Installation (Full-Screen Native App Experience)
+
+To run the app in **standalone full-screen mode** (removing Safari's URL address bar and navigation buttons):
+
+1. On your iPad, open **Safari** and visit your deployed URL.
+2. Tap the **Share** button (the square icon with an upward arrow) in the Safari toolbar.
+3. Scroll down and tap **Add to Home Screen**.
+4. Confirm by tapping **Add**.
+5. Return to your iPad home screen and tap the **LiquidText** icon.
+6. The app will launch in an isolated full-screen window with full touch, gesture, and Apple Pencil support.
+
+---
+
+## 🛠️ Usage Guide
+
+| Action | How to Perform |
+|---|---|
+| **Extract Excerpt** | Highlight any text passage in the document pane and tap **Extract to Workspace ➔** on the popup menu. |
+| **Jump to Source** | Tap the **PAGE [N]** badge at the top of any card on the workspace. The reader will auto-scroll and pulse-highlight the original passage. |
+| **Pan Workspace** | Touch and drag on any empty section of the workspace grid. |
+| **Connect Cards** | Drag the small circular dot (port) on the right edge of a card and drop it onto another card to draw a Bezier connector. |
+| **Toggle Ink Mode** | Tap the **Pen Ink** button on the top toolbar to switch between card manipulation and Apple Pencil freehand drawing. |
+| **Fold/Accordion** | Tap **Accordion Fold** to collapse intermediate pages and bring distant paragraphs into direct alignment. |
+| **Load Custom PDF** | Tap **Open PDF** in the top bar and select any PDF document from your Files app or local storage. |
+
+---
+
+## 🔒 Privacy & Data
+
+- **Client-Side Only:** All PDFs and excerpt cards are processed directly in your device's browser sandbox using Mozilla PDF.js.
+- **Zero Telemetry:** No documents or excerpts are uploaded to external databases or servers.

@@ -1,69 +1,89 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f7f4ed">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LiquidText Workspace</title>
+  <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="EvidenceBoard">
-  <link rel="manifest" href="manifest.webmanifest">
-  <title>EvidenceBoard</title>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="styles.css">
-  <link rel="stylesheet" href="enhancements.css">
+  
+  <!-- Mozilla PDF.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
 </head>
 <body>
-  <div id="app">
-    <header class="topbar">
-      <button class="brand" id="project-name" title="Rename project">EvidenceBoard <span>Local-first research</span></button>
-      <div class="top-actions">
-        <label class="button primary" for="file-input">Add PDF</label>
-        <input id="file-input" type="file" accept="application/pdf" multiple hidden>
-        <label class="button" for="reference-input">Import references</label>
-        <input id="reference-input" type="file" accept=".ris,.bib,.txt" multiple hidden>
-        <button class="button" id="new-note">New note</button>
-        <button class="button" id="connect">Draw link</button>
-        <button class="button" id="page-editor">PDF pages</button>
-        <button class="button" id="ocr-page">OCR page</button>
-        <button class="button" id="export">Export outline</button>
+  <div id="app-container">
+    <!-- Top Global Toolbar -->
+    <header class="top-toolbar">
+      <div class="brand">Liquid<span>Canvas</span></div>
+      <div class="toolbar-actions">
+        <label class="btn file-btn">
+          <span>Open PDF</span>
+          <input type="file" id="pdf-file-input" accept="application/pdf">
+        </label>
+        <button id="btn-accordion" class="btn" title="Collapse intervening text">Accordion Fold</button>
+        <button id="btn-draw" class="btn" title="Toggle Apple Pencil / Ink">Pen Ink</button>
+        <button id="btn-reset-zoom" class="btn" title="Reset workspace canvas">Reset Canvas</button>
       </div>
     </header>
-    <aside class="library" aria-label="Documents">
-      <div class="aside-head"><strong>Sources</strong><button id="new-board" class="icon-button" title="New board">＋</button></div>
-      <div id="document-list" class="document-list"><p class="empty">Add a PDF to begin.</p></div>
-      <div class="page-nav"><span>PAGES</span><div id="page-list" class="page-list"></div></div>
-      <div class="board-list"><span>BOARDS</span><div id="board-list"></div></div>
-      <div class="local-note">Stored on this iPad/browser. Export a project backup regularly.</div>
-    </aside>
-    <main class="reader" id="reader">
-      <div class="reader-toolbar">
-        <select id="doc-picker" aria-label="Current document"><option value="">Choose a document</option></select>
-        <button id="prev-page" class="icon-button" aria-label="Previous page">‹</button>
-        <span id="page-label">—</span>
-        <button id="next-page" class="icon-button" aria-label="Next page">›</button>
-        <button id="zoom-out" class="icon-button" aria-label="Zoom out">−</button>
-        <span id="zoom-label">100%</span>
-        <button id="zoom-in" class="icon-button" aria-label="Zoom in">＋</button>
-        <label class="search"><span>⌕</span><input id="search-input" placeholder="Search sources and notes"></label>
-      </div>
-      <div id="reader-stage" class="reader-stage">
-        <div class="welcome"><h1>Read with room to think.</h1><p>Import PDFs, select a passage, then choose <b>Make excerpt</b>. Evidence stays linked to its source.</p></div>
-      </div>
-    </main>
-    <section class="board-pane" id="board-pane">
-      <div class="board-toolbar"><strong id="board-title">Board</strong><div><button class="tool selected" data-tool="select">Select</button><button class="tool" data-tool="ink">Ink</button><button class="tool" data-tool="link">Link</button><button class="tool" data-tool="pan">Pan</button><button id="fit-board" class="icon-button" title="Fit board">⊙</button></div></div>
-      <div id="board-viewport" class="board-viewport">
-        <div id="board" class="board">
-          <svg id="links" class="links" aria-hidden="true"></svg>
-          <canvas id="ink" class="ink" aria-label="Ink canvas"></canvas>
-          <div id="items" class="items"></div>
+
+    <!-- Main Workspace Split Pane -->
+    <main class="split-viewport">
+      <!-- Left: PDF Document Viewer -->
+      <section id="document-pane" class="viewer-pane">
+        <div id="pdf-render-container" class="scroll-container">
+          <div id="default-demo-doc" class="sample-page-stack">
+            <article class="doc-page" data-page-number="1">
+              <div class="page-meta">PAGE 1</div>
+              <h2>Section 1: Jurisdictional Foundations</h2>
+              <p class="selectable-paragraph" data-source-id="p1-para1">
+                The invocation of appellate jurisdiction under Article 136 of the Constitution requires substantive proof of legal arbitrariness. In procedural review, statutory mandates governing fundamental rights take absolute precedence over intermediate agency determinations.
+              </p>
+              <p class="selectable-paragraph" data-source-id="p1-para2">
+                A prima facie demonstration of non-application of mind invalidates executive detention without necessitating full discovery proceedings.
+              </p>
+            </article>
+
+            <div class="accordion-fold-strip hidden" id="fold-1-2">
+              <div class="fold-lines"></div>
+              <span>Pages 2 - 3 Folded (Pinch to expand)</span>
+              <div class="fold-lines"></div>
+            </div>
+
+            <article class="doc-page" data-page-number="4">
+              <div class="page-meta">PAGE 4</div>
+              <h2>Section 4: Concluding Directions</h2>
+              <p class="selectable-paragraph" data-source-id="p4-para1">
+                Consequently, the respondent authority must tender complete compliance within twenty-one days of this order. No further stay applications will be entertained in the interim period.
+              </p>
+            </article>
+          </div>
         </div>
-        <div id="board-hint" class="board-hint">Drag cards to arrange ideas. Use Link, then draw from one card to another.</div>
-      </div>
-    </section>
+
+        <!-- Extract Floating Action Menu -->
+        <div id="extract-menu" class="floating-bubble hidden">
+          <button id="btn-extract-selection">Extract to Workspace ➔</button>
+        </div>
+      </section>
+
+      <!-- Center Pane Resizer -->
+      <div id="pane-resizer" class="pane-divider"></div>
+
+      <!-- Right: Infinite Visual Canvas -->
+      <section id="workspace-pane" class="canvas-pane">
+        <div id="workspace-surface" class="infinite-board">
+          <svg id="connectors-layer"></svg>
+          <canvas id="ink-layer"></canvas>
+          <div id="cards-container"></div>
+        </div>
+      </section>
+    </main>
   </div>
-  <template id="item-template"><article class="item" tabindex="0"><div class="item-head"><span class="drag-handle">⠿</span><button class="item-delete" aria-label="Delete">×</button></div><div class="item-body"></div><div class="item-meta"></div></article></template>
-  <dialog id="page-dialog"><form method="dialog"><div class="dialog-head"><strong>PDF page editor</strong><button value="cancel" class="icon-button">×</button></div><p id="page-dialog-help">Reorder pages, hide pages, or export the resulting PDF.</p><div id="page-grid" class="page-grid"></div><div class="dialog-actions"><button id="export-edited-pdf" type="button" class="button primary">Export PDF</button><button value="cancel" class="button">Done</button></div></form></dialog>
-  <script type="module" src="app.js"></script>
+
+  <script src="app.js"></script>
 </body>
 </html>

@@ -1,65 +1,310 @@
-import * as pdfjsCore from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.mjs';
-const pdfjsLib = {...pdfjsCore, renderTextLayer: args => typeof pdfjsCore.renderTextLayer === 'function' ? pdfjsCore.renderTextLayer(args) : {promise: new pdfjsCore.TextLayer(args).render()}};
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs';
+// Register Service Worker for iPad PWA Installation
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+  });
+}
 
-const $ = selector => document.querySelector(selector);
-const uid = () => crypto.randomUUID();
-const dbName = 'evidenceboard';
-let db, state, pdfs = new Map(), currentPdf, currentPage = 1, pageScale = 1.15;
-let tool = 'select', selected = new Set(), selectionAnchor = null, saveTimer, inkStroke = null, linkStart = null, thumbnailObserver;
+// Application State
+const state = {
+  pan: { x: 50, y: 50 },
+  scale: 1,
+  isPanning: false,
+  startPan: { x: 0, y: 0 },
+  cards: [],
+  connections: [],
+  drawing: false,
+  isPenMode: false,
+  activePortCardId: null,
+  activeSelection: null
+};
 
-const blankState = () => ({version: 1, name: 'EvidenceBoard', documents: [], boards: [{id: uid(), title: 'Board', items: [], links: [], ink: [], view: {x: 0, y: 0, scale: 1}}], activeBoardId: null, annotations: []});
-const board = () => state.boards.find(b => b.id === state.activeBoardId) || state.boards[0];
+// DOM References
+const docPane = document.getElementById('document-pane');
+const workspacePane = document.getElementById('workspace-pane');
+const workspaceSurface = document.getElementById('workspace-surface');
+const cardsContainer = document.getElementById('cards-container');
+const svgLayer = document.getElementById('connectors-layer');
+const inkCanvas = document.getElementById('ink-layer');
+const inkCtx = inkCanvas.getContext('2d');
+const extractMenu = document.getElementById('extract-menu');
+const btnExtract = document.getElementById('btn-extract-selection');
+const btnDraw = document.getElementById('btn-draw');
+const btnAccordion = document.getElementById('btn-accordion');
+const foldStrip = document.getElementById('fold-1-2');
+const pdfFileInput = document.getElementById('pdf-file-input');
+const paneResizer = document.getElementById('pane-resizer');
 
-function openDb() { return new Promise((resolve, reject) => { const request = indexedDB.open(dbName, 1); request.onupgradeneeded = () => { request.result.createObjectStore('projects'); request.result.createObjectStore('files'); }; request.onsuccess = () => { db = request.result; resolve(); }; request.onerror = () => reject(request.error); }); }
-function tx(store, mode = 'readonly') { return db.transaction(store, mode).objectStore(store); }
-function requestResult(req) { return new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
-async function load() { state = await requestResult(tx('projects').get('main')) || blankState(); if (!state.activeBoardId) state.activeBoardId = state.boards[0].id; for (const doc of state.documents) { const file = await requestResult(tx('files').get(doc.id)); if (file) await openPdf(doc, file, false); } render(); }
-function save() { clearTimeout(saveTimer); saveTimer = setTimeout(async () => { await requestResult(tx('projects', 'readwrite').put(state, 'main')); }, 350); }
+// Initialize Canvas Size
+function setupCanvas() {
+  inkCanvas.width = 5000;
+  inkCanvas.height = 5000;
+  inkCtx.strokeStyle = '#38bdf8';
+  inkCtx.lineWidth = 3;
+  inkCtx.lineCap = 'round';
+  inkCtx.lineJoin = 'round';
+  updateSurfaceTransform();
+}
+setupCanvas();
 
-async function openPdf(meta, file, select = true) { try { const data = new Uint8Array(await file.arrayBuffer()); const pdf = await pdfjsLib.getDocument({data}).promise; pdfs.set(meta.id, {pdf, file, pageTexts: []}); meta.pages = pdf.numPages; meta.pageOrder ||= Array.from({length: pdf.numPages}, (_, i) => i + 1); if (select) { state.activeDocumentId = meta.id; currentPdf = pdfs.get(meta.id); currentPage = 1; } return true; } catch (error) { console.error(error); alert(`Could not load “${meta.title}”. Confirm it is a standard, unencrypted PDF and refresh once. Technical detail: ${error.message}`); return false; } }
-async function addFiles(files) { for (const file of files) { const meta = {id: uid(), title: file.name.replace(/\.pdf$/i, ''), filename: file.name, pages: 0, pageOrder: [], createdAt: Date.now()}; await openPdf(meta, file, true); if (!meta.pages) continue; state.documents.push(meta); await requestResult(tx('files', 'readwrite').put(file, meta.id)); } save(); render(); await renderPdf(); }
+function updateSurfaceTransform() {
+  workspaceSurface.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.scale})`;
+}
 
-function render() { renderLists(); renderPageList(); renderBoard(); renderToolbar(); }
-function renderLists() { const list = $('#document-list'); list.innerHTML = state.documents.length ? '' : '<p class="empty">Add a PDF to begin.</p>'; const picker = $('#doc-picker'); picker.innerHTML = '<option value="">Choose a document</option>'; state.documents.forEach(doc => { const active = doc.id === state.activeDocumentId; const button = document.createElement('button'); button.className = `doc-entry${active ? ' active' : ''}`; button.textContent = doc.title; button.title = doc.filename; button.onclick = () => chooseDoc(doc.id); list.append(button); const option = new Option(doc.title, doc.id, active, active); picker.add(option); }); const boards = $('#board-list'); boards.innerHTML = ''; state.boards.forEach(b => { const item = document.createElement('button'); item.className = `board-entry${b.id === board().id ? ' active' : ''}`; item.textContent = b.title; item.onclick = () => { state.activeBoardId = b.id; selected.clear(); save(); render(); }; boards.append(item); }); $('#board-title').textContent = board().title; }
-function renderToolbar() { $('#project-name').firstChild.nodeValue = `${state.name} `; $('#page-label').textContent = currentPdf ? `${currentPage} / ${activeMeta()?.pageOrder?.length || currentPdf.pdf.numPages}` : '—'; $('#zoom-label').textContent = `${Math.round(pageScale * 100)}%`; }
-function renderPageList() { const list = $('#page-list'); if (!list) return; list.innerHTML = ''; const meta = activeMeta(); const entry = pdfs.get(meta?.id); if (!meta || !entry) return; const order = meta.pageOrder || []; order.forEach((sourcePage, index) => { const button = document.createElement('button'); button.className = `page-thumb${index + 1 === currentPage ? ' active' : ''}`; button.dataset.sourcePage = sourcePage; button.dataset.docId = meta.id; button.innerHTML = `<span class="page-number">${index + 1}</span>`; button.title = `Page ${index + 1}`; button.onclick = async () => { currentPage = index + 1; renderPageList(); await renderPdf(); }; list.append(button); }); thumbnailObserver?.disconnect(); thumbnailObserver = new IntersectionObserver(entries => entries.forEach(entry => { if (entry.isIntersecting) { thumbnailObserver.unobserve(entry.target); renderThumbnail(entry.target); } }), {root:list, rootMargin:'150px'}); list.querySelectorAll('.page-thumb').forEach(button => thumbnailObserver.observe(button)); }
-async function renderThumbnail(button) { const entry = pdfs.get(button.dataset.docId); if (!entry || button.querySelector('canvas')) return; try { const page = await entry.pdf.getPage(Number(button.dataset.sourcePage)); const view = page.getViewport({scale:.18}); const canvas = document.createElement('canvas'); canvas.width = Math.ceil(view.width); canvas.height = Math.ceil(view.height); await page.render({canvasContext:canvas.getContext('2d'),viewport:view}).promise; button.prepend(canvas); } catch { button.classList.add('thumbnail-failed'); } }
-async function chooseDoc(id) { state.activeDocumentId = id; currentPdf = pdfs.get(id); currentPage = 1; save(); render(); await renderPdf(); }
+// Workspace Panning
+workspacePane.addEventListener('pointerdown', (e) => {
+  if (state.isPenMode || e.target.closest('.excerpt-card')) return;
+  state.isPanning = true;
+  state.startPan = { x: e.clientX - state.pan.x, y: e.clientY - state.pan.y };
+});
 
-async function pageText(docId, page) { const entry = pdfs.get(docId); if (!entry) return ''; if (!entry.pageTexts[page]) { const pg = await entry.pdf.getPage(page); const content = await pg.getTextContent(); entry.pageTexts[page] = content.items.map(x => x.str).join(' '); } return entry.pageTexts[page]; }
-async function renderPdf() { const stage = $('#reader-stage'); if (!currentPdf) return; const meta = state.documents.find(d => d.id === state.activeDocumentId); const sourcePage = (meta.pageOrder || [])[currentPage - 1]; if (!sourcePage) { stage.innerHTML = '<div class="welcome"><p>This document has no visible pages. Restore a page from PDF pages.</p></div>'; return; } stage.innerHTML = '<div class="welcome"><p>Loading PDF…</p></div>'; try { const pdfPage = await currentPdf.pdf.getPage(sourcePage); const viewport = pdfPage.getViewport({scale: pageScale}); const wrap = document.createElement('div'); wrap.className = 'pdf-page'; wrap.dataset.page = sourcePage; const canvas = document.createElement('canvas'); const ratio = Math.min(devicePixelRatio || 1, 2); canvas.width = Math.floor(viewport.width * ratio); canvas.height = Math.floor(viewport.height * ratio); canvas.style.width = `${viewport.width}px`; canvas.style.height = `${viewport.height}px`; const ctx = canvas.getContext('2d'); await pdfPage.render({canvasContext: ctx, viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0]}).promise; const textLayer = document.createElement('div'); textLayer.className = 'textLayer'; textLayer.style.width = `${viewport.width}px`; textLayer.style.height = `${viewport.height}px`; const textContent = await pdfPage.getTextContent(); await pdfjsLib.renderTextLayer({textContentSource: textContent, container: textLayer, viewport}).promise; wrap.append(canvas, textLayer); stage.innerHTML = ''; stage.append(wrap); await pageText(state.activeDocumentId, sourcePage); renderHighlights(wrap, sourcePage); renderToolbar(); } catch (error) { stage.innerHTML = `<div class="welcome"><h2>Could not render this page</h2><p>${error.message}</p></div>`; } }
-function renderHighlights(wrap, sourcePage) { const box = wrap.getBoundingClientRect(); state.annotations.filter(a => a.kind === 'highlight' && a.documentId === state.activeDocumentId && a.page === sourcePage && a.rects).forEach(a => a.rects.forEach(rect => { const mark = document.createElement('span'); mark.className = 'saved-highlight'; mark.style.cssText = `position:absolute;left:${rect.x * box.width}px;top:${rect.y * box.height}px;width:${rect.w * box.width}px;height:${rect.h * box.height}px;background:#e6bd4577;pointer-events:none;`; wrap.append(mark); })); }
+window.addEventListener('pointermove', (e) => {
+  if (!state.isPanning) return;
+  state.pan.x = e.clientX - state.startPan.x;
+  state.pan.y = e.clientY - state.startPan.y;
+  updateSurfaceTransform();
+});
 
-function renderBoard() { const b = board(); const root = $('#board'); root.style.transform = `translate(${b.view.x}px, ${b.view.y}px) scale(${b.view.scale})`; const items = $('#items'); items.innerHTML = ''; for (const item of b.items) { const el = $('#item-template').content.firstElementChild.cloneNode(true); el.dataset.id = item.id; el.classList.add(item.kind); if (selected.has(item.id)) el.classList.add('selected'); el.style.left = `${item.x}px`; el.style.top = `${item.y}px`; const body = el.querySelector('.item-body'); body.textContent = item.text; if (item.kind === 'note') { body.contentEditable = 'true'; body.addEventListener('input', () => { item.text = body.textContent; save(); }); } const meta = el.querySelector('.item-meta'); meta.textContent = item.kind === 'excerpt' ? `${item.source.title} · p. ${item.source.page}` : (item.tags || []).map(t => `#${t}`).join(' '); el.querySelector('.item-delete').onclick = event => { event.stopPropagation(); deleteItem(item.id); }; el.addEventListener('click', event => { if (event.target.closest('.item-delete') || document.activeElement === body) return; selectItem(item.id, event.shiftKey); }); el.addEventListener('dblclick', () => { if (item.source) jumpToSource(item.source); }); makeDraggable(el, item); items.append(el); } drawLinks(); drawInk(); }
-function selectItem(id, additive = false) { if (!additive) selected.clear(); selected.has(id) && additive ? selected.delete(id) : selected.add(id); renderBoard(); }
-function deleteItem(id) { const b = board(); b.items = b.items.filter(x => x.id !== id); b.links = b.links.filter(x => x.from !== id && x.to !== id); selected.delete(id); save(); renderBoard(); }
-function makeDraggable(el, item) { let start; el.addEventListener('pointerdown', event => { if (tool === 'link') { linkStart = item.id; el.setPointerCapture(event.pointerId); event.preventDefault(); return; } if (tool !== 'select' || event.target.closest('[contenteditable]') || event.target.closest('button')) return; start = {x: event.clientX, y: event.clientY, ix: item.x, iy: item.y}; el.setPointerCapture(event.pointerId); event.preventDefault(); }); el.addEventListener('pointermove', event => { if (!start) return; const s = board().view.scale; item.x = Math.max(0, start.ix + (event.clientX - start.x) / s); item.y = Math.max(0, start.iy + (event.clientY - start.y) / s); el.style.left = `${item.x}px`; el.style.top = `${item.y}px`; drawLinks(); }); el.addEventListener('pointerup', event => { if (tool === 'link' && linkStart) { const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.item')?.dataset.id; if (target && target !== linkStart) { const label = prompt('Relationship label (optional):') || ''; board().links.push({id: uid(), from: linkStart, to: target, label}); save(); renderBoard(); } linkStart = null; } if (start) { start = null; save(); } }); }
-function drawLinks() { const svg = $('#links'), b = board(); svg.innerHTML = ''; b.links.forEach(link => { const from = b.items.find(x => x.id === link.from), to = b.items.find(x => x.id === link.to); if (!from || !to) return; const x1 = from.x + 103, y1 = from.y + 44, x2 = to.x + 103, y2 = to.y + 44; const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', `M ${x1} ${y1} C ${x1 + (x2-x1)*.45} ${y1}, ${x1 + (x2-x1)*.55} ${y2}, ${x2} ${y2}`); svg.append(path); if (link.label) { const label = document.createElementNS('http://www.w3.org/2000/svg', 'text'); label.textContent = link.label; label.setAttribute('x', (x1+x2)/2); label.setAttribute('y', (y1+y2)/2 - 5); label.setAttribute('text-anchor','middle'); label.setAttribute('fill','#275f58'); label.setAttribute('font-size','14'); svg.append(label); } }); }
-function drawInk() { const canvas = $('#ink'), ctx = canvas.getContext('2d'); canvas.width = 3000; canvas.height = 2200; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#34332b'; ctx.lineWidth = 3; board().ink.forEach(stroke => { ctx.beginPath(); stroke.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); }); }
+window.addEventListener('pointerup', () => {
+  state.isPanning = false;
+});
 
-function addNote() { const b = board(); const n = b.items.length; b.items.push({id: uid(), kind: 'note', text: 'New thought', x: 160 + (n%4)*45, y: 150 + (n%5)*38, tags: []}); save(); renderBoard(); }
-function createExcerpt() { if (!selectionAnchor) return; const b = board(), n = b.items.length; b.items.push({id: uid(), kind: 'excerpt', text: selectionAnchor.quote, x: 170 + (n%4)*55, y: 130 + (n%5)*45, source: selectionAnchor, tags: []}); selectionAnchor = null; $('#selection-menu')?.remove(); save(); renderBoard(); }
-async function jumpToSource(source) { await chooseDoc(source.documentId); currentPage = source.page; await renderPdf(); setTimeout(() => { const page = $('.pdf-page'); page?.scrollIntoView({behavior:'smooth', block:'center'}); }, 100); }
-function connectSelected() { tool = 'link'; document.querySelectorAll('.tool').forEach(x => x.classList.toggle('selected', x.dataset.tool === 'link')); $('#board-hint').textContent = 'Draw from a card to another card to create a linked relationship.'; }
+// Pen / Apple Pencil Inking Support
+btnDraw.addEventListener('click', () => {
+  state.isPenMode = !state.isPenMode;
+  btnDraw.classList.toggle('active', state.isPenMode);
+  inkCanvas.classList.toggle('drawing-active', state.isPenMode);
+});
 
-async function search(query) { if (!query.trim()) return renderPdf(); const needle = query.toLowerCase(); const hits = []; for (const doc of state.documents) for (let p=1;p<=doc.pages;p++) { const text = await pageText(doc.id,p); const at = text.toLowerCase().indexOf(needle); if (at >= 0) hits.push({doc,p, snippet: text.slice(Math.max(0,at-55),at+query.length+85)}); } const noteHits = state.boards.flatMap(b => b.items.filter(i => i.text.toLowerCase().includes(needle)).map(i => ({board:b,item:i}))); const stage = $('#reader-stage'); stage.innerHTML = `<div class="welcome"><h2>${hits.length + noteHits.length} result${hits.length + noteHits.length === 1 ? '' : 's'}</h2></div>`; const box = stage.firstElementChild; hits.forEach(hit => { const btn=document.createElement('button'); btn.className='doc-entry'; btn.textContent=`${hit.doc.title}, p. ${hit.p}: ${hit.snippet}`; btn.onclick=async()=>{await chooseDoc(hit.doc.id);currentPage=hit.p;await renderPdf();}; box.append(btn); }); noteHits.forEach(hit=>{const btn=document.createElement('button');btn.className='doc-entry';btn.textContent=`Note on ${hit.board.title}: ${hit.item.text}`;btn.onclick=()=>{state.activeBoardId=hit.board.id;selected=new Set([hit.item.id]);render();};box.append(btn);}); }
-function exportOutline() { let out = `# ${state.name}\n\n`; state.boards.forEach(b => { out += `## ${b.title}\n\n`; b.items.forEach(i => { out += `- ${i.kind === 'excerpt' ? '> ' : ''}${i.text.replace(/\n/g,' ')}${i.source ? ` — ${i.source.title}, p. ${i.source.page}` : ''}\n`; }); out += '\n'; }); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([out],{type:'text/markdown'})); a.download = `${state.name.replace(/[^a-z0-9]+/gi,'-').toLowerCase() || 'evidenceboard'}-outline.md`; a.click(); URL.revokeObjectURL(a.href); }
+let isDrawing = false;
+let lastPoint = null;
 
-function showSelectionMenu(event) { const sel = getSelection(); const quote = sel?.toString().trim(); if (!quote || !currentPdf) return; const range = sel.getRangeAt(0); const pageEl = range.commonAncestorContainer.parentElement?.closest('.pdf-page'); if (!pageEl) return; $('#selection-menu')?.remove(); const pageRect = pageEl.getBoundingClientRect(); const rects = [...range.getClientRects()].map(r => ({x:(r.left-pageRect.left)/pageRect.width,y:(r.top-pageRect.top)/pageRect.height,w:r.width/pageRect.width,h:r.height/pageRect.height})); selectionAnchor = {documentId: state.activeDocumentId, page: Number(pageEl.dataset.page), quote, title: state.documents.find(d=>d.id===state.activeDocumentId).title, rects}; const menu = document.createElement('div'); menu.id='selection-menu'; menu.className='selection-popover'; menu.style.left=`${Math.min(event.clientX, innerWidth-210)}px`; menu.style.top=`${Math.max(8,event.clientY-42)}px`; menu.innerHTML='<button id="make-excerpt">Excerpt</button><button id="make-highlight">Highlight</button><button id="make-comment">Comment</button>'; document.body.append(menu); $('#make-excerpt').onclick=createExcerpt; $('#make-highlight').onclick=()=>{state.annotations.push({id:uid(),...selectionAnchor,kind:'highlight',createdAt:Date.now()});save();menu.remove();sel.removeAllRanges();renderPdf();}; $('#make-comment').onclick=()=>{const text=prompt('Comment on this selection:');if(text){const b=board(),n=b.items.length;b.items.push({id:uid(),kind:'comment',text,x:170+(n%4)*55,y:130+(n%5)*45,source:selectionAnchor,tags:[]});save();renderBoard();}menu.remove();sel.removeAllRanges();}; }
+inkCanvas.addEventListener('pointerdown', (e) => {
+  if (!state.isPenMode) return;
+  isDrawing = true;
+  const rect = workspaceSurface.getBoundingClientRect();
+  lastPoint = {
+    x: (e.clientX - rect.left) / state.scale,
+    y: (e.clientY - rect.top) / state.scale
+  };
+});
 
-function bind() { $('#file-input').onchange = event => addFiles([...event.target.files]); $('#doc-picker').onchange = event => chooseDoc(event.target.value); $('#prev-page').onclick = async()=>{if(currentPdf&&currentPage>1){currentPage--;await renderPdf();}}; $('#next-page').onclick = async()=>{if(currentPdf&&currentPage<currentPdf.pdf.numPages){currentPage++;await renderPdf();}}; $('#zoom-in').onclick=async()=>{if(currentPdf){pageScale=Math.min(2.3,pageScale+.15);await renderPdf();}}; $('#zoom-out').onclick=async()=>{if(currentPdf){pageScale=Math.max(.65,pageScale-.15);await renderPdf();}}; $('#new-note').onclick=addNote; $('#connect').onclick=connectSelected; $('#export').onclick=exportOutline; $('#project-name').onclick=()=>{const n=prompt('Project name',state.name);if(n){state.name=n;save();render();}}; $('#new-board').onclick=()=>{const title=prompt('Board name','New board');if(title){const b={id:uid(),title,items:[],links:[],ink:[],view:{x:0,y:0,scale:1}};state.boards.push(b);state.activeBoardId=b.id;save();render();}}; $('#fit-board').onclick=()=>{board().view={x:0,y:0,scale:1};save();renderBoard();}; document.querySelectorAll('.tool').forEach(btn=>btn.onclick=()=>{tool=btn.dataset.tool;document.querySelectorAll('.tool').forEach(x=>x.classList.toggle('selected',x===btn));$('#ink').style.pointerEvents=tool==='ink'?'auto':'none';}); let timer; $('#search-input').oninput=e=>{clearTimeout(timer);timer=setTimeout(()=>search(e.target.value),350);}; $('#reader-stage').addEventListener('pointerup', showSelectionMenu); bindBoardGestures(); }
-function bindBoardGestures() { const viewport=$('#board-viewport'); let pan; viewport.addEventListener('pointerdown',e=>{if(tool==='pan'){pan={x:e.clientX,y:e.clientY,vx:board().view.x,vy:board().view.y};viewport.setPointerCapture(e.pointerId);}}); viewport.addEventListener('pointermove',e=>{if(pan){board().view.x=pan.vx+e.clientX-pan.x;board().view.y=pan.vy+e.clientY-pan.y;renderBoard();}}); viewport.addEventListener('pointerup',()=>{if(pan){pan=null;save();}}); viewport.addEventListener('wheel',e=>{if(e.ctrlKey||e.metaKey){e.preventDefault();const b=board();b.view.scale=Math.max(.45,Math.min(1.8,b.view.scale*(e.deltaY>0?.92:1.08)));renderBoard();save();}},{passive:false}); const canvas=$('#ink'); canvas.addEventListener('pointerdown',e=>{if(tool!=='ink')return;const r=canvas.getBoundingClientRect(),b=board(),s=b.view.scale;inkStroke={points:[{x:(e.clientX-r.left-b.view.x)/s,y:(e.clientY-r.top-b.view.y)/s}]};canvas.setPointerCapture(e.pointerId);});canvas.addEventListener('pointermove',e=>{if(!inkStroke)return;const r=canvas.getBoundingClientRect(),b=board(),s=b.view.scale;inkStroke.points.push({x:(e.clientX-r.left-b.view.x)/s,y:(e.clientY-r.top-b.view.y)/s});const tmp=board().ink;tmp.push(inkStroke);drawInk();tmp.pop();});canvas.addEventListener('pointerup',()=>{if(inkStroke){board().ink.push(inkStroke);inkStroke=null;save();drawInk();}}); }
+inkCanvas.addEventListener('pointermove', (e) => {
+  if (!isDrawing || !state.isPenMode) return;
+  const rect = workspaceSurface.getBoundingClientRect();
+  const current = {
+    x: (e.clientX - rect.left) / state.scale,
+    y: (e.clientY - rect.top) / state.scale
+  };
 
-function activeMeta() { return state.documents.find(d => d.id === state.activeDocumentId); }
-async function renderThumbnail(button) { const entry = pdfs.get(button.dataset.docId); if (!entry || button.querySelector('canvas')) return; try { const page = await entry.pdf.getPage(Number(button.dataset.sourcePage)); const ratio = Math.min(devicePixelRatio || 1, 2); const view = page.getViewport({scale:.48}); const canvas = document.createElement('canvas'); canvas.width = Math.ceil(view.width * ratio); canvas.height = Math.ceil(view.height * ratio); canvas.style.width = `${Math.ceil(view.width)}px`; canvas.style.height = `${Math.ceil(view.height)}px`; await page.render({canvasContext:canvas.getContext('2d'),viewport:view,transform:ratio === 1 ? null : [ratio,0,0,ratio,0,0]}).promise; button.prepend(canvas); } catch { button.classList.add('thumbnail-failed'); } }
-function parseReferences(text) { const ris = [...text.matchAll(/(?:^|\n)TY  -[\s\S]*?(?=\nER  -|$)/g)].map(m => m[0]); if (ris.length) return ris.map(entry => { const title = entry.match(/\nTI  - (.+)/)?.[1] || 'Untitled reference'; const url = entry.match(/\nUR  - (.+)/)?.[1] || ''; return {title, url}; }); return [...text.matchAll(/@\w+\s*\{[^,]+,([\s\S]*?)\n\}/g)].map(m => ({title:m[1].match(/title\s*=\s*[{"]([^}"]+)/i)?.[1] || 'Untitled reference',url:m[1].match(/url\s*=\s*[{"]([^}"]+)/i)?.[1] || ''})); }
-async function importReferences(files) { for (const file of files) { const refs = parseReferences(await file.text()); const b = board(); refs.forEach((ref, i) => b.items.push({id:uid(),kind:'note',text:ref.title + (ref.url ? `\n${ref.url}` : ''),x:170+(b.items.length%4)*55,y:130+(b.items.length%5)*45,tags:['reference']})); } save(); renderBoard(); }
-function openPageEditor() { const meta = activeMeta(); if (!meta) return alert('Open a PDF first.'); const dialog = $('#page-dialog'), grid = $('#page-grid'); grid.innerHTML = ''; const visible = new Set(meta.pageOrder); for (let p=1;p<=meta.pages;p++) { const card = document.createElement('div'); card.className = `page-card${visible.has(p)?'':' hidden-page'}`; card.innerHTML = `<strong>Page ${p}</strong><div><button data-action="up">←</button><button data-action="toggle">${visible.has(p)?'Hide':'Restore'}</button><button data-action="down">→</button></div>`; card.querySelector('[data-action="toggle"]').onclick=()=>{meta.pageOrder=visible.has(p)?meta.pageOrder.filter(x=>x!==p):[...meta.pageOrder,p].sort((a,b)=>a-b);save();openPageEditor();}; card.querySelector('[data-action="up"]').onclick=()=>{const i=meta.pageOrder.indexOf(p);if(i>0){[meta.pageOrder[i-1],meta.pageOrder[i]]=[meta.pageOrder[i],meta.pageOrder[i-1]];save();openPageEditor();}}; card.querySelector('[data-action="down"]').onclick=()=>{const i=meta.pageOrder.indexOf(p);if(i>=0&&i<meta.pageOrder.length-1){[meta.pageOrder[i+1],meta.pageOrder[i]]=[meta.pageOrder[i],meta.pageOrder[i+1]];save();openPageEditor();}}; grid.append(card); } dialog.showModal(); }
-async function exportEditedPdf() { const meta=activeMeta(), entry=pdfs.get(meta?.id); if(!entry) return; const {PDFDocument}=await import('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/+esm'); const source=await PDFDocument.load(await entry.file.arrayBuffer()); const output=await PDFDocument.create(); const pages=await output.copyPages(source,meta.pageOrder.map(x=>x-1)); pages.forEach(p=>output.addPage(p)); const bytes=await output.save(); const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));a.download=`${meta.title}-edited.pdf`;a.click();URL.revokeObjectURL(a.href); }
-async function ocrCurrentPage() { if(!currentPdf) return; const canvas=$('.pdf-page canvas'); if(!canvas) return; const button=$('#ocr-page'); button.disabled=true;button.textContent='Recognizing…';try{const Tesseract=(await import('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.0/+esm')).default;const result=await Tesseract.recognize(canvas.toDataURL('image/png'),'eng');const text=result.data.text.trim();if(text){const b=board(),n=b.items.length;b.items.push({id:uid(),kind:'note',text:`OCR — ${activeMeta().title}, p. ${$('.pdf-page').dataset.page}\n${text}`,x:170+(n%4)*55,y:130+(n%5)*45,tags:['OCR']});save();renderBoard();alert('OCR text was added as a board note.');}else alert('No readable text was found on this page.');}catch(error){alert(`OCR could not start: ${error.message}`);}finally{button.disabled=false;button.textContent='OCR page';}}
-function bindEnhancements() { $('#reference-input').onchange=e=>importReferences([...e.target.files]); $('#page-editor').onclick=openPageEditor; $('#export-edited-pdf').onclick=exportEditedPdf; $('#ocr-page').onclick=ocrCurrentPage; $('#prev-page').onclick=async()=>{if(currentPdf&&currentPage>1){currentPage--;await renderPdf();}}; $('#next-page').onclick=async()=>{const pages=activeMeta()?.pageOrder?.length||0;if(currentPdf&&currentPage<pages){currentPage++;await renderPdf();}}; }
+  inkCtx.beginPath();
+  inkCtx.moveTo(lastPoint.x, lastPoint.y);
+  inkCtx.lineTo(current.x, current.y);
+  inkCtx.stroke();
+  lastPoint = current;
+});
 
-function bindPageNavigation() { $('#prev-page').onclick=async()=>{if(currentPdf&&currentPage>1){currentPage--;renderPageList();await renderPdf();}}; $('#next-page').onclick=async()=>{const pages=activeMeta()?.pageOrder?.length||0;if(currentPdf&&currentPage<pages){currentPage++;renderPageList();await renderPdf();}}; }
+window.addEventListener('pointerup', () => {
+  isDrawing = false;
+});
 
-await openDb(); await load(); bind(); bindEnhancements(); bindPageNavigation(); if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+// Excerpt Selection in Document Viewport
+document.addEventListener('selectionchange', () => {
+  const selection = window.getSelection();
+  const text = selection.toString().trim();
+  if (text.length > 3 && docPane.contains(selection.anchorNode)) {
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const docRect = docPane.getBoundingClientRect();
+
+    extractMenu.style.left = `${rect.left - docRect.left + rect.width / 2 - 60}px`;
+    extractMenu.style.top = `${rect.top - docRect.top - 40}px`;
+    extractMenu.classList.remove('hidden');
+
+    state.activeSelection = {
+      text: text,
+      containerElement: selection.anchorNode.parentElement.closest('[data-source-id]') || selection.anchorNode.parentElement,
+      page: selection.anchorNode.parentElement.closest('[data-page-number]')?.dataset.pageNumber || 1
+    };
+  } else {
+    extractMenu.classList.add('hidden');
+  }
+});
+
+// Create Excerpt Card on Workspace
+btnExtract.addEventListener('click', () => {
+  if (!state.activeSelection) return;
+  const cardId = 'card_' + Date.now();
+  const targetX = -state.pan.x + 100 + Math.random() * 80;
+  const targetY = -state.pan.y + 100 + Math.random() * 80;
+
+  const card = {
+    id: cardId,
+    text: state.activeSelection.text,
+    sourceElement: state.activeSelection.containerElement,
+    page: state.activeSelection.page,
+    x: Math.max(20, targetX),
+    y: Math.max(20, targetY)
+  };
+
+  state.cards.push(card);
+  renderCard(card);
+  extractMenu.classList.add('hidden');
+  window.getSelection().removeAllRanges();
+});
+
+function renderCard(card) {
+  const el = document.createElement('div');
+  el.className = 'excerpt-card';
+  el.id = card.id;
+  el.style.left = `${card.x}px`;
+  el.style.top = `${card.y}px`;
+
+  el.innerHTML = `
+    <div class="card-badge" title="Click to jump to document passage">PAGE ${card.page}</div>
+    <div class="card-text">${card.text}</div>
+    <div class="card-port" title="Drag to connect another card"></div>
+  `;
+
+  // Bidirectional Deep Linking: Jump to document source
+  el.querySelector('.card-badge').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (card.sourceElement) {
+      card.sourceElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.sourceElement.classList.add('highlight-pulse');
+      setTimeout(() => card.sourceElement.classList.remove('highlight-pulse'), 2800);
+    }
+  });
+
+  // Card Dragging Logic
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target.classList.contains('card-port')) return;
+    let shiftX = e.clientX - el.getBoundingClientRect().left;
+    let shiftY = e.clientY - el.getBoundingClientRect().top;
+
+    function moveAt(pageX, pageY) {
+      const surfaceRect = workspaceSurface.getBoundingClientRect();
+      const x = (pageX - surfaceRect.left - shiftX) / state.scale;
+      const y = (pageY - surfaceRect.top - shiftY) / state.scale;
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      card.x = x;
+      card.y = y;
+      drawConnectors();
+    }
+
+    function onPointerMove(ev) {
+      moveAt(ev.clientX, ev.clientY);
+    }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', function upHandler() {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', upHandler);
+    });
+  });
+
+  // Dynamic Bezier Thread Port Connection
+  const port = el.querySelector('.card-port');
+  port.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    state.activePortCardId = card.id;
+
+    function endConnection(ev) {
+      const destCardEl = ev.target.closest('.excerpt-card');
+      if (destCardEl && destCardEl.id !== state.activePortCardId) {
+        state.connections.push({ from: state.activePortCardId, to: destCardEl.id });
+        drawConnectors();
+      }
+      state.activePortCardId = null;
+      window.removeEventListener('pointerup', endConnection);
+    }
+
+    window.addEventListener('pointerup', endConnection);
+  });
+
+  cardsContainer.appendChild(el);
+}
+
+// Render Curved Bezier Connector Lines
+function drawConnectors() {
+  svgLayer.innerHTML = '';
+  state.connections.forEach(conn => {
+    const fromCard = state.cards.find(c => c.id === conn.from);
+    const toCard = state.cards.find(c => c.id === conn.to);
+    if (!fromCard || !toCard) return;
+
+    const x1 = fromCard.x + 250;
+    const y1 = fromCard.y + 40;
+    const x2 = toCard.x;
+    const y2 = toCard.y + 40;
+
+    const dx = Math.abs(x2 - x1) * 0.5;
+    const d = `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', '#3b82f6');
+    path.setAttribute('stroke-width', '2.5');
+    path.setAttribute('fill', 'none');
+    svgLayer.appendChild(path);
+  });
+}
+
+// Accordion Fold Mechanism
+btnAccordion.addEventListener('click', () => {
+  foldStrip.classList.toggle('hidden');
+});
+
+// PDF Rendering Integration via PDF.js
+pdfFileInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const fileReader = new FileReader();
+  fileReader.onload = async function() {
+    const typedarray = new Uint8Array(this.result);
+    const pdf = await pdfjsLib.getDocument(typedarray).promise;
+    const renderTarget = document.getElementById('pdf-render-container');
+    renderTarget.innerHTML = '';
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1.3 });
+
+      const pageWrapper = document.createElement('div');
+      pageWrapper.className = 'doc-page';
+      pageWrapper.dataset.pageNumber = pageNum;
+      pageWrapper.style.padding = '10px';
+
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      canvas.style.width = '100%';
+
+      await page.render({ canvasContext: context, viewport: viewport }).promise;
+      pageWrapper.appendChild(canvas);
+      renderTarget.appendChild(pageWrapper);
+    }
+  };
+  fileReader.readAsArrayBuffer(file);
+});
+
+// Split Viewport Resizer
+let isResizing = false;
+paneResizer.addEventListener('pointerdown', () => {
+  isResizing = true;
+});
+
+window.addEventListener('pointermove', (e) => {
+  if (!isResizing) return;
+  const percentage = (e.clientX / window.innerWidth) * 100;
+  if (percentage > 20 && percentage < 80) {
+    docPane.style.width = `${percentage}%`;
+  }
+});
+
+window.addEventListener('pointerup', () => {
+  isResizing = false;
+});
